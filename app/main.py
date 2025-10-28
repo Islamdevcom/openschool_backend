@@ -29,11 +29,16 @@ def create_app() -> FastAPI:
 
     # CORS настройки - добавляем только один раз
     app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],  # временно для отладки
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+    CORSMiddleware,
+    allow_origins=[
+        "https://openschool-frontend.vercel.app",
+        "https://openschool-frontend-git-main-islamdevcoms-projects.vercel.app",
+        "http://localhost:5173",
+        "http://localhost:3000"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
     )
 
     # Подключаем роутеры
