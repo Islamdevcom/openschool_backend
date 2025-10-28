@@ -51,7 +51,7 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     def create_test_data():
         db = SessionLocal()
-        school = db.query(School).filter(School.code == "SCHO125").first()
+        school = db.query(School).filter(School.name == "OpenSchool Test School").first()
         if not school:
             school = School(name="OpenSchool Test School", code="SCHO125")
             db.add(school)
