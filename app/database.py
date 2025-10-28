@@ -3,11 +3,18 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 import os
 
-# Читаем DATABASE_URL из окружения (Railway Variables)
+# Для дебага - выведем все переменные окружения
+print("=== ENVIRONMENT VARIABLES DEBUG ===")
+print(f"DATABASE_URL value: {repr(os.environ.get('DATABASE_URL'))}")
+print(f"All env keys: {list(os.environ.keys())}")
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable is not set!")
+    print("WARNING: DATABASE_URL is not set, using SQLite")
+    DATABASE_URL = "sqlite:///./test.db"
+
+print(f"Using DATABASE_URL: {DATABASE_URL[:50]}...")
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
