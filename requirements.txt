@@ -3,7 +3,7 @@ uvicorn
 sqlalchemy
 pydantic
 python-dotenv
-passlib[bcrypt==4.0.1
+passlib
 python-jose[cryptography]
 alembic
 psycopg2-binary
