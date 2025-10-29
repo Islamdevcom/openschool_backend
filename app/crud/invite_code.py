@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..models.invite_code import InviteCode
 from ..models.user import User
-from ..models.teacher_student_link import TeacherStudentLink  # связь teacher ↔ student
+from ..models.teacher_student_relation import TeacherStudentRelation
 
 # Буквы/цифры без двусмысленных символов (O/0, I/1)
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -51,7 +51,7 @@ def use_invite_code(db: Session, code: str, student_id: int) -> str:
     """
     Использовать код приглашения:
     - Валидируем и проверяем TTL/used
-    - Создаём запись в teacher_student_links
+    - Создаём запись в teacher_student_relations
     - Помечаем инвайт used=True
     Возвращаем статус: "success" | "expired" | "invalid" | "student_not_found" | "already_linked".
     """
@@ -92,10 +92,10 @@ def use_invite_code(db: Session, code: str, student_id: int) -> str:
 
     # Уже привязан к этому учителю?
     exists = (
-        db.query(TeacherStudentLink)
+        db.query(TeacherStudentRelation)
         .filter(
-            TeacherStudentLink.teacher_id == invite.teacher_id,
-            TeacherStudentLink.student_id == student.id
+            TeacherStudentRelation.teacher_id == invite.teacher_id,
+            TeacherStudentRelation.student_id == student.id
         )
         .first()
     )
@@ -110,7 +110,7 @@ def use_invite_code(db: Session, code: str, student_id: int) -> str:
     # Создаём связь и помечаем инвайт использованным
     try:
         print("✅ Создаем связь преподаватель-студент...")
-        link = TeacherStudentLink(teacher_id=invite.teacher_id, student_id=student.id)
+        link = TeacherStudentRelation(teacher_id=invite.teacher_id, student_id=student.id)
         db.add(link)
         invite.used = True  # ✅ Помечаем использованным только при успешном создании связи
         db.commit()
