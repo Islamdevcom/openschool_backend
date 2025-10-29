@@ -21,4 +21,5 @@ class RegistrationRequest(Base):
     role = Column(String, nullable=False)
     status = Column(Enum(RequestStatus), default=RequestStatus.pending)
     school_id = Column(Integer, ForeignKey("schools.id"))
-    school = relationship("School", back_populates="requests")
+    school = relationship("School")
+
