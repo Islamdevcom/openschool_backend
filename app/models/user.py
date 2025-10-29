@@ -18,7 +18,8 @@ class User(Base):
     
     # Школа (nullable для independent)
     school_id = Column(Integer, ForeignKey("schools.id"), nullable=True)
-    school = relationship("School", back_populates="users")
+    school = relationship("School")
+
     
     # Для учителей
     teacher_invite_code = Column(String, unique=True, nullable=True)  # для independent teachers
