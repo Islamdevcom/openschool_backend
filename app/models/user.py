@@ -1,22 +1,33 @@
-from sqlalchemy import Column, Integer, String, Enum, ForeignKey
-from ..database import Base
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Enum
+from sqlalchemy.orm import relationship
+from app.database import Base
 import enum
 
-# ✅ Перечисление ролей
 class RoleEnum(str, enum.Enum):
-    superadmin = "superadmin"
-    admin = "admin"
     teacher = "teacher"
     student = "student"
 
-# ✅ Модель пользователя
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = {'extend_existing': True}  # 🛠️ Чтобы избежать конфликтов при повторной загрузке
 
     id = Column(Integer, primary_key=True, index=True)
-    full_name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
+    full_name = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
-    role = Column(Enum(RoleEnum), default="student")
+    role = Column(Enum(RoleEnum), nullable=False)
+    
+    # Школа (nullable для independent)
     school_id = Column(Integer, ForeignKey("schools.id"), nullable=True)
+    school = relationship("School", back_populates="users")
+    
+    # Для учителей
+    teacher_invite_code = Column(String, unique=True, nullable=True)  # для independent teachers
+    
+    # Для студентов
+    referral_code = Column(String, unique=True, nullable=True)  # код студента для приглашений
+    referred_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # кто пригласил
+    loyalty_points = Column(Integer, default=0)  # баллы лояльности
+    
+    # Верификация
+    is_verified = Column(Boolean, default=False)
+    

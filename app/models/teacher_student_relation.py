@@ -12,5 +12,5 @@ class TeacherStudentRelation(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Связи
-    teacher = relationship("User", foreign_keys=[teacher_id], back_populates="students")
-    student = relationship("User", foreign_keys=[student_id], back_populates="teachers")
+    teacher = relationship("User", foreign_keys=[teacher_id])
+    student = relationship("User", foreign_keys=[student_id])
