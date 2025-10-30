@@ -35,3 +35,7 @@ alembic/versions/*.pyc
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Debug and temporary files
+check_routes.py
+REGISTRATION_DEBUG.md
