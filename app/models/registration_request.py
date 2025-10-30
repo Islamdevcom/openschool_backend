@@ -11,7 +11,7 @@ class RequestStatus(str, enum.Enum):
 
 
 class RegistrationRequest(Base):
-    
+
     __tablename__ = "register_requests"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -20,6 +20,6 @@ class RegistrationRequest(Base):
     password = Column(String, nullable=False)
     role = Column(String, nullable=False)
     status = Column(Enum(RequestStatus), default=RequestStatus.pending)
-    school_id = Column(Integer, ForeignKey("schools.id"))
+    school_id = Column(Integer, ForeignKey("schools.id"), nullable=True)  # ← Nullable для индивидуальных
     school = relationship("School")
 

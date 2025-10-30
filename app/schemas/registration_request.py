@@ -34,7 +34,7 @@ class RegistrationRequestOut(BaseModel):
     email: EmailStr
     role: RoleEnum
     status: RequestStatus
-    school_id: int
+    school_id: Optional[int] = None  # ← Nullable для индивидуальных
 
     class Config:
         from_attributes = True  # ✅ для SQLAlchemy → Pydantic
