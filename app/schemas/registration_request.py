@@ -1,4 +1,5 @@
 from pydantic import BaseModel, EmailStr
+from typing import Optional
 from enum import Enum
 
 
@@ -18,6 +19,14 @@ class RegistrationRequestCreate(BaseModel):
     password: str
     role: RoleEnum
     school_id: int
+
+class IndependentRegistrationRequest(BaseModel):
+    """Схема для самостоятельной регистрации без указания школы"""
+    full_name: str
+    email: EmailStr
+    password: str
+    role: RoleEnum
+    school_id: Optional[int] = None
 
 class RegistrationRequestOut(BaseModel):
     id: int
