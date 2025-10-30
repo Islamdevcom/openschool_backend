@@ -7,9 +7,9 @@ import sys
 # === Добавляем путь до корня проекта ===
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# === Импортируем backend.app так же, как в main.py ===
-from backend.app.database import Base
-from backend.app import models  # все модели регистрируются здесь
+# === Импортируем app так же, как в main.py ===
+from app.database import Base
+from app import models  # все модели регистрируются здесь
 
 # Конфигурация Alembic
 config = context.config
