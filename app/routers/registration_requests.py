@@ -7,10 +7,10 @@ from app.models.school import School
 from app.models.user import User
 from app.auth.hashing import get_password_hash
 
-router = APIRouter(prefix="/registration", tags=["Registration Requests"])
+router = APIRouter(tags=["Registration Requests"])
 
-@router.post("/register", response_model=RegistrationRequestOut)
-def create_registration_request(request_data: RegistrationRequestCreate, db: Session = Depends(get_db)):
+def handle_registration(request_data: RegistrationRequestCreate, db: Session):
+    """Общая логика регистрации"""
     # Проверка существования школы
     school = db.query(School).filter(School.id == request_data.school_id).first()
     if not school:
@@ -41,3 +41,29 @@ def create_registration_request(request_data: RegistrationRequestCreate, db: Ses
     db.commit()
     db.refresh(new_request)
     return new_request
+
+# Множественные endpoint'ы для совместимости с разными URL на фронтенде
+@router.post("/register", response_model=RegistrationRequestOut)
+def create_registration_v1(request_data: RegistrationRequestCreate, db: Session = Depends(get_db)):
+    """POST /register"""
+    return handle_registration(request_data, db)
+
+@router.post("/registration", response_model=RegistrationRequestOut)
+def create_registration_v2(request_data: RegistrationRequestCreate, db: Session = Depends(get_db)):
+    """POST /registration"""
+    return handle_registration(request_data, db)
+
+@router.post("/registration/register", response_model=RegistrationRequestOut)
+def create_registration_v3(request_data: RegistrationRequestCreate, db: Session = Depends(get_db)):
+    """POST /registration/register"""
+    return handle_registration(request_data, db)
+
+@router.post("/register-request", response_model=RegistrationRequestOut)
+def create_registration_v4(request_data: RegistrationRequestCreate, db: Session = Depends(get_db)):
+    """POST /register-request (старый URL для совместимости)"""
+    return handle_registration(request_data, db)
+
+@router.post("/register-request/", response_model=RegistrationRequestOut)
+def create_registration_v5(request_data: RegistrationRequestCreate, db: Session = Depends(get_db)):
+    """POST /register-request/ (старый URL с trailing slash)"""
+    return handle_registration(request_data, db)
