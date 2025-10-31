@@ -110,22 +110,19 @@ def create_independent_registration(request_data: IndependentRegistrationRequest
     db.commit()
     db.refresh(new_user)
 
-    # Создаём токен для автоматического входа
+    # Создаём токен для автоматического входа (ТАКОЙ ЖЕ формат как в auth.py)
     access_token = create_access_token(data={
-        "sub": new_user.email,
-        "user_id": new_user.id,
+        "sub": str(new_user.id),  # ← ID как строка (как в login)
         "role": new_user.role
     })
 
-    # Возвращаем токен и данные пользователя
+    # Возвращаем токен и данные пользователя (ТАКОЙ ЖЕ формат как в auth.py/login)
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "user": {
-            "id": new_user.id,
-            "email": new_user.email,
-            "full_name": new_user.full_name,
-            "role": new_user.role,
-            "school_id": new_user.school_id
-        }
+        "role": new_user.role,
+        "email": new_user.email,
+        "full_name": new_user.full_name,
+        "school_id": new_user.school_id,
+        "user_id": new_user.id  # Для совместимости
     }

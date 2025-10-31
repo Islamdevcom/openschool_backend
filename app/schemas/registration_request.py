@@ -40,7 +40,14 @@ class RegistrationRequestOut(BaseModel):
         from_attributes = True  # ✅ для SQLAlchemy → Pydantic
 
 class IndependentRegistrationResponse(BaseModel):
-    """Ответ для независимой регистрации с токеном для автоматического входа"""
+    """Ответ для независимой регистрации с токеном для автоматического входа
+
+    Формат такой же как /auth/login для совместимости с фронтендом
+    """
     access_token: str
     token_type: str = "bearer"
-    user: dict  # Данные пользователя
+    role: str
+    email: str
+    full_name: str
+    school_id: Optional[int] = None
+    user_id: int
