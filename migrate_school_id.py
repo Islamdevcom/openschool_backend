@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-Безопасная миграция для изменения school_id в nullable.
-Запускается при каждом деплое, безопасна для повторного запуска.
+Безопасная миграция для таблицы register_requests.
+- Создаёт таблицу если её нет
+- Делает school_id nullable если таблица уже существует
 """
 import os
 import sys
 from sqlalchemy import create_engine, text
 
-def migrate_school_id():
-    """Делает school_id nullable в таблице register_requests"""
+def migrate_register_requests():
+    """Создаёт или обновляет таблицу register_requests"""
     database_url = os.getenv("DATABASE_URL")
 
     if not database_url:
@@ -29,10 +30,24 @@ def migrate_school_id():
             table_exists = result.scalar()
 
             if not table_exists:
-                print("ℹ️  Table register_requests doesn't exist yet")
+                # Таблица не существует - создаём с правильной структурой
+                print("📝 Creating register_requests table...")
+                conn.execute(text("""
+                    CREATE TABLE register_requests (
+                        id SERIAL PRIMARY KEY,
+                        full_name VARCHAR NOT NULL,
+                        email VARCHAR UNIQUE NOT NULL,
+                        password VARCHAR NOT NULL,
+                        role VARCHAR NOT NULL,
+                        status VARCHAR DEFAULT 'pending',
+                        school_id INTEGER REFERENCES schools(id) NULL
+                    );
+                """))
+                conn.commit()
+                print("✅ Successfully created register_requests table with nullable school_id")
                 return
 
-            # Проверяем nullable статус
+            # Таблица существует - проверяем nullable статус school_id
             result = conn.execute(text("""
                 SELECT is_nullable
                 FROM information_schema.columns
@@ -43,6 +58,7 @@ def migrate_school_id():
 
             if is_nullable == 'NO':
                 # Делаем school_id nullable
+                print("📝 Making school_id nullable...")
                 conn.execute(text("""
                     ALTER TABLE register_requests
                     ALTER COLUMN school_id DROP NOT NULL;
@@ -50,11 +66,14 @@ def migrate_school_id():
                 conn.commit()
                 print("✅ Successfully made school_id nullable in register_requests")
             else:
-                print("ℹ️  school_id is already nullable")
+                print("ℹ️  register_requests table already exists with nullable school_id")
 
     except Exception as e:
         print(f"❌ Migration failed: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
-    migrate_school_id()
+    migrate_register_requests()
+
