@@ -2,4 +2,5 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "alembic upgrade head && uvicorn app.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8080}"
+# Запускаем безопасную миграцию school_id перед стартом сервера
+startCommand = "python migrate_school_id.py && uvicorn app.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8080}"
