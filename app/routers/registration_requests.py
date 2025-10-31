@@ -74,10 +74,14 @@ def create_registration_v5(request_data: RegistrationRequestCreate, db: Session 
 
 @router.post("/register-request/independent", response_model=RegistrationRequestOut)
 def create_independent_registration(request_data: IndependentRegistrationRequest, db: Session = Depends(get_db)):
-    """POST /register-request/independent - самостоятельная регистрация БЕЗ привязки к школе"""
+    """POST /register-request/independent - самостоятельная регистрация БЕЗ привязки к школе
 
-    # Для индивидуальных пользователей school_id = None (не связаны со школой)
-    school_id = request_data.school_id  # None для индивидуальных
+    Независимые пользователи НЕ связаны ни с какой школой (school_id = NULL).
+    Они имеют отдельные аккаунты и не пересекаются со школьными пользователями.
+    """
+
+    # Для независимых пользователей school_id = None (НЕ связаны со школой)
+    school_id = request_data.school_id  # None для независимых
 
     # Если school_id указан, проверяем его существование
     if school_id is not None:
