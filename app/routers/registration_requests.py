@@ -74,16 +74,20 @@ def create_registration_v5(request_data: RegistrationRequestCreate, db: Session 
 
 @router.post("/register-request/independent", response_model=RegistrationRequestOut)
 def create_independent_registration(request_data: IndependentRegistrationRequest, db: Session = Depends(get_db)):
-    """POST /register-request/independent - самостоятельная регистрация БЕЗ привязки к школе"""
+    """POST /register-request/independent - самостоятельная регистрация для индивидуальных пользователей
 
-    # Для индивидуальных пользователей school_id = None (не связаны со школой)
-    school_id = request_data.school_id  # None для индивидуальных
+    Независимые пользователи автоматически регистрируются в дефолтной школе (ID=1),
+    но логически они не связаны с реальной школой - это технический workaround для БД.
+    """
 
-    # Если school_id указан, проверяем его существование
-    if school_id is not None:
-        school = db.query(School).filter(School.id == school_id).first()
-        if not school:
-            raise HTTPException(status_code=404, detail="Школа не найдена")
+    # Для независимых пользователей используем дефолтную школу (ID=1)
+    # Это технический workaround, т.к. в текущей схеме БД school_id обязательный
+    school_id = request_data.school_id if request_data.school_id else 1
+
+    # Проверяем существование школы
+    school = db.query(School).filter(School.id == school_id).first()
+    if not school:
+        raise HTTPException(status_code=404, detail="Школа не найдена. Обратитесь к администратору.")
 
     # Проверка на дубликат email в пользователях
     existing_user = db.query(User).filter(User.email == request_data.email).first()
