@@ -4,12 +4,14 @@ from ..database import get_db
 from app.schemas.registration_request import (
     RegistrationRequestCreate,
     IndependentRegistrationRequest,
-    RegistrationRequestOut
+    RegistrationRequestOut,
+    IndependentRegistrationResponse
 )
 from app.models.registration_request import RegistrationRequest
 from app.models.school import School
 from app.models.user import User
 from app.auth.hashing import get_password_hash
+from app.auth.jwt_handler import create_access_token
 
 router = APIRouter(tags=["Registration Requests"])
 
@@ -72,45 +74,58 @@ def create_registration_v5(request_data: RegistrationRequestCreate, db: Session 
     """POST /register-request/ (старый URL с trailing slash)"""
     return handle_registration(request_data, db)
 
-@router.post("/register-request/independent", response_model=RegistrationRequestOut)
+@router.post("/register-request/independent", response_model=IndependentRegistrationResponse)
 def create_independent_registration(request_data: IndependentRegistrationRequest, db: Session = Depends(get_db)):
     """POST /register-request/independent - самостоятельная регистрация БЕЗ привязки к школе
 
-    Независимые пользователи НЕ связаны ни с какой школой (school_id = NULL).
-    Они имеют отдельные аккаунты и не пересекаются со школьными пользователями.
+    Независимые пользователи:
+    - НЕ связаны ни с какой школой (school_id = NULL)
+    - Создаются СРАЗУ без ожидания одобрения
+    - Получают токен для автоматического входа
+    - Сразу переходят на главную страницу
+
+    Отличие от школьной регистрации:
+    - Школьная: Создаёт заявку → Ждёт одобрения админа → Админ создаёт пользователя
+    - Независимая: Сразу создаёт пользователя → Автоматический вход
     """
 
-    # Для независимых пользователей school_id = None (НЕ связаны со школой)
-    school_id = request_data.school_id  # None для независимых
-
-    # Если school_id указан, проверяем его существование
-    if school_id is not None:
-        school = db.query(School).filter(School.id == school_id).first()
-        if not school:
-            raise HTTPException(status_code=404, detail="Школа не найдена")
-
-    # Проверка на дубликат email в пользователях
+    # Проверка на дубликат email
     existing_user = db.query(User).filter(User.email == request_data.email).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Пользователь с таким email уже существует")
 
-    # Проверка на дубликат email в заявках
-    existing_request = db.query(RegistrationRequest).filter(RegistrationRequest.email == request_data.email).first()
-    if existing_request:
-        raise HTTPException(status_code=400, detail="Заявка с таким email уже существует")
-
-    # Хешируем пароль перед сохранением
+    # Хешируем пароль
     hashed_password = get_password_hash(request_data.password)
 
-    new_request = RegistrationRequest(
+    # Создаём пользователя НАПРЯМУЮ (без заявки и одобрения)
+    new_user = User(
         full_name=request_data.full_name,
         email=request_data.email,
-        password=hashed_password,
+        hashed_password=hashed_password,
         role=request_data.role,
-        school_id=school_id
+        school_id=None  # Независимые НЕ связаны со школой
     )
 
-    db.add(new_request)
+    db.add(new_user)
     db.commit()
-    db.refresh(new_request)
-    return new_request
+    db.refresh(new_user)
+
+    # Создаём токен для автоматического входа
+    access_token = create_access_token(data={
+        "sub": new_user.email,
+        "user_id": new_user.id,
+        "role": new_user.role
+    })
+
+    # Возвращаем токен и данные пользователя
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": new_user.id,
+            "email": new_user.email,
+            "full_name": new_user.full_name,
+            "role": new_user.role,
+            "school_id": new_user.school_id
+        }
+    }
