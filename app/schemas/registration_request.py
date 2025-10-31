@@ -38,3 +38,9 @@ class RegistrationRequestOut(BaseModel):
 
     class Config:
         from_attributes = True  # ✅ для SQLAlchemy → Pydantic
+
+class IndependentRegistrationResponse(BaseModel):
+    """Ответ для независимой регистрации с токеном для автоматического входа"""
+    access_token: str
+    token_type: str = "bearer"
+    user: dict  # Данные пользователя
