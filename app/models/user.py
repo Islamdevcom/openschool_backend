@@ -6,6 +6,8 @@ import enum
 class RoleEnum(str, enum.Enum):
     teacher = "teacher"
     student = "student"
+    school_admin = "school_admin"
+    superadmin = "superadmin"
 
 class User(Base):
     __tablename__ = "users"
@@ -19,6 +21,9 @@ class User(Base):
     # Школа (nullable для independent)
     school_id = Column(Integer, ForeignKey("schools.id"), nullable=True)
     school = relationship("School")
+
+    # Для учителей - назначенные дисциплины
+    assigned_disciplines = relationship("TeacherDiscipline", foreign_keys="TeacherDiscipline.teacher_id", back_populates="teacher")
 
     
     # Для учителей

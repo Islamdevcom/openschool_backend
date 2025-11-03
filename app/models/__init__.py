@@ -8,6 +8,8 @@ from app.models.registration_request import RegistrationRequest, RequestStatus
 from app.models.invite_code import InviteCode
 from app.models.student import Student
 from app.models.student_activity import StudentActivity
+from app.models.discipline import Discipline
+from app.models.teacher_discipline import TeacherDiscipline
 
 __all__ = [
     "Base",
@@ -20,4 +22,6 @@ __all__ = [
     "InviteCode",
     "Student",
     "StudentActivity",
+    "Discipline",
+    "TeacherDiscipline",
 ]

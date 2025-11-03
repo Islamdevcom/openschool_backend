@@ -11,4 +11,5 @@ class School(Base):
     
     # Связи
     users = relationship("User", foreign_keys="User.school_id")
+    disciplines = relationship("Discipline", back_populates="school", cascade="all, delete-orphan")
     
