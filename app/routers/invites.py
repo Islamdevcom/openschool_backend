@@ -1,17 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 from pydantic import BaseModel
+import logging
 
 from ..database import get_db
 from ..dependencies import get_current_user
 from ..models.user import User
-from ..models.invite_code import InviteCode                   
+from ..models.invite_code import InviteCode
 from ..models.teacher_student_relation import TeacherStudentRelation  # ✅ ИСПРАВЛЕНО
-from ..crud.invite_code import (                               
+from ..crud.invite_code import (
     create_invite_code as create_invite,
     use_invite_code as use_invite,
 )
 from .. import schemas
+
+# Настройка логгера
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/invites", tags=["invites"])
 
@@ -37,9 +42,54 @@ def create_invite_code(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    ensure_teacher(current_user)
-    invite = create_invite(db, current_user.id)
-    return invite
+    """
+    Создать новый код приглашения для преподавателя.
+
+    Returns:
+        InviteCodeResponse: Созданный код приглашения с полями code и created_at
+
+    Raises:
+        HTTPException 403: Если пользователь не преподаватель
+        HTTPException 500: При ошибке создания кода (БД, генерация и т.д.)
+    """
+    try:
+        ensure_teacher(current_user)
+        logger.info(f"Создание кода приглашения для преподавателя ID: {current_user.id}")
+
+        invite = create_invite(db, current_user.id)
+
+        logger.info(f"Успешно создан код приглашения: {invite.code} (ID: {invite.id})")
+        return invite
+
+    except HTTPException:
+        # Пробрасываем HTTPException (например, от ensure_teacher)
+        raise
+
+    except RuntimeError as e:
+        # Обработка RuntimeError из create_invite (не удалось сгенерировать уникальный код)
+        logger.error(f"Ошибка генерации кода приглашения для преподавателя {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Не удалось сгенерировать уникальный код приглашения. Попробуйте еще раз."
+        )
+
+    except SQLAlchemyError as e:
+        # Обработка ошибок БД
+        logger.error(f"Ошибка БД при создании кода приглашения для преподавателя {current_user.id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Ошибка базы данных при создании кода приглашения. Проверьте подключение к БД."
+        )
+
+    except Exception as e:
+        # Обработка всех остальных исключений
+        logger.error(f"Неожиданная ошибка при создании кода приглашения для преподавателя {current_user.id}: {type(e).__name__}: {str(e)}")
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Произошла ошибка при создании кода приглашения: {str(e)}"
+        )
 
 
 @router.post("/use")
