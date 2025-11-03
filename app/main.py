@@ -98,6 +98,21 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     def create_test_data():
+        """
+        Создание тестовых данных ТОЛЬКО для локальной разработки.
+
+        В продакшене (Railway) эта функция НЕ выполняется для безопасности.
+        Установите ENVIRONMENT=development для активации.
+        """
+        # Проверяем режим окружения
+        environment = os.getenv("ENVIRONMENT", "production").lower()
+
+        if environment != "development":
+            logger.info("🔒 Production mode: skipping test data creation")
+            return
+
+        logger.info("🧪 Development mode: creating test data...")
+
         db = SessionLocal()
         school = db.query(School).filter(School.name == "OpenSchool Test School").first()
         if not school:
@@ -105,7 +120,7 @@ def create_app() -> FastAPI:
             db.add(school)
             db.commit()
             db.refresh(school)
-            print(f"✅ Создана школа: {school.name} (код: {school.code})")
+            print(f"✅ Создана тестовая школа: {school.name} (код: {school.code})")
 
         teacher = db.query(User).filter(User.email == "teacher@example.com").first()
         if not teacher:
@@ -116,6 +131,7 @@ def create_app() -> FastAPI:
                 role=RoleEnum.teacher,
                 school_id=school.id
             ))
+            print(f"✅ Создан тестовый учитель: teacher@example.com")
 
         student = db.query(User).filter(User.email == "student@example.com").first()
         if not student:
@@ -126,6 +142,7 @@ def create_app() -> FastAPI:
                 role=RoleEnum.student,
                 school_id=school.id
             ))
+            print(f"✅ Создан тестовый студент: student@example.com")
 
         admin = db.query(User).filter(User.email == "admin@example.com").first()
         if not admin:
@@ -136,7 +153,7 @@ def create_app() -> FastAPI:
                 role=RoleEnum.school_admin,
                 school_id=school.id
             ))
-            print(f"✅ Создан администратор школы: admin@example.com (пароль: 1234)")
+            print(f"✅ Создан тестовый администратор: admin@example.com")
 
         superadmin = db.query(User).filter(User.email == "superadmin@example.com").first()
         if not superadmin:
@@ -147,10 +164,11 @@ def create_app() -> FastAPI:
                 role=RoleEnum.superadmin,
                 school_id=None  # Суперадмин не привязан к школе
             ))
-            print(f"✅ Создан суперадминистратор: superadmin@example.com (пароль: 1234)")
+            print(f"✅ Создан тестовый суперадмин: superadmin@example.com")
 
         db.commit()
         db.close()
+        print("✅ Все тестовые данные созданы (пароль для всех: 1234)")
 
     return app
 
