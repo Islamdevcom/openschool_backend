@@ -21,15 +21,20 @@ def generate_random_code(length: int = 6) -> str:
     return ''.join(random.choices(ALPHABET, k=length))
 
 
-def create_invite_code(db: Session, teacher_id: int, ttl_days: int = 7) -> InviteCode:
+def create_invite_code(db: Session, teacher_id: int, ttl_days: int = None) -> InviteCode:
     """
     Создать уникальный инвайт-код для преподавателя (used=False).
-    TTL контролируем при использовании (см. _is_expired).
+
+    ВАЖНО: При создании нового кода все старые НЕИСПОЛЬЗОВАННЫЕ коды
+    этого преподавателя автоматически удаляются. Это предотвращает
+    использование старых кодов посторонними людьми.
+
+    Использованные коды (used=True) остаются в истории.
 
     Args:
         db: Сессия БД
         teacher_id: ID преподавателя
-        ttl_days: Срок действия кода в днях (по умолчанию 7)
+        ttl_days: Устаревший параметр (оставлен для обратной совместимости)
 
     Returns:
         InviteCode: Созданный объект кода приглашения
@@ -39,6 +44,21 @@ def create_invite_code(db: Session, teacher_id: int, ttl_days: int = 7) -> Invit
         SQLAlchemyError: При ошибках базы данных
     """
     logger.info(f"Создание кода приглашения для преподавателя ID: {teacher_id}")
+
+    # Удаляем все старые неиспользованные коды этого преподавателя
+    old_unused_codes = (
+        db.query(InviteCode)
+        .filter(InviteCode.teacher_id == teacher_id, InviteCode.used == False)
+        .all()
+    )
+
+    if old_unused_codes:
+        logger.info(f"Удаление {len(old_unused_codes)} старых неиспользованных кодов преподавателя {teacher_id}")
+        for old_code in old_unused_codes:
+            logger.debug(f"Удаление старого кода: {old_code.code}")
+            db.delete(old_code)
+        db.commit()
+        logger.info("Старые коды успешно удалены")
 
     for attempt in range(5):  # до 5 попыток на случай коллизий по unique(code)
         code = generate_random_code()
@@ -69,7 +89,7 @@ def _is_expired(invite: InviteCode, ttl_days: int = 7) -> bool:
 def use_invite_code(db: Session, code: str, student_id: int) -> str:
     """
     Использовать код приглашения:
-    - Валидируем и проверяем TTL/used
+    - Валидируем код (без проверки срока действия - коды бесконечные)
     - Создаём запись в teacher_student_relations
     - Помечаем инвайт used=True
 
@@ -79,7 +99,11 @@ def use_invite_code(db: Session, code: str, student_id: int) -> str:
         student_id: ID студента
 
     Returns:
-        str: Статус операции - "success" | "expired" | "invalid" | "student_not_found" | "already_linked"
+        str: Статус операции:
+            - "success": Успешно подключились к преподавателю
+            - "invalid": Код не существует или уже использован
+            - "student_not_found": Студент не найден
+            - "already_linked": Уже подключен к этому преподавателю
     """
     logger.info(f"Использование кода приглашения '{code}' студентом ID: {student_id}")
 
@@ -98,10 +122,9 @@ def use_invite_code(db: Session, code: str, student_id: int) -> str:
             logger.warning(f"Код '{code}' не найден в базе данных")
         return "invalid"
 
-    logger.debug(f"Код '{code}' найден, проверяем срок действия...")
-    if _is_expired(invite):
-        logger.warning(f"Код '{code}' просрочен")
-        return "expired"
+    # Убрали проверку срока действия - коды бесконечные!
+    # if _is_expired(invite):
+    #     return "expired"
 
     student = db.query(User).filter(User.id == student_id).first()
 
