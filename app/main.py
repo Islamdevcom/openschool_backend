@@ -1,5 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import os
+import logging
 
 from app.routers import (
     auth,
@@ -20,6 +23,9 @@ from app.models.school import School
 from app.auth.hashing import get_password_hash
 from app.routers.student import router as students_router
 
+# Настройка логгера
+logger = logging.getLogger(__name__)
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="OpenSchool AI",
@@ -27,14 +33,32 @@ def create_app() -> FastAPI:
         description="AI-помощник для студентов и преподавателей"
     )
 
-    # CORS настройки - добавляем только один раз
-    app.add_middleware(
-    CORSMiddleware,
-        allow_origins=["*"],  # временно разрешаем все
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+    # CORS настройки - получаем разрешенные origins из переменной окружения или используем дефолтные
+    allowed_origins_str = os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:3000,http://localhost:5173,https://openschool-frontend.vercel.app"
     )
+    allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",")]
+
+    print(f"🔒 CORS настройки: разрешенные origins = {allowed_origins}")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,  # Explicit список origins для работы с credentials
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        allow_headers=["*"],
+        expose_headers=["*"],
+    )
+
+    # Обработчик для всех необработанных исключений - гарантирует CORS заголовки даже при ошибках
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception):
+        logger.error(f"Необработанное исключение: {type(exc).__name__}: {str(exc)}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Внутренняя ошибка сервера: {str(exc)}"},
+        )
 
     # Подключаем роутеры
     app.include_router(auth.router, prefix="/auth", tags=["Auth"])
