@@ -6,6 +6,7 @@ import logging
 from ..database import get_db
 from ..dependencies import get_current_user
 from ..models.user import User, RoleEnum
+from ..models.school import School
 from ..models.discipline import Discipline
 from ..models.teacher_discipline import TeacherDiscipline
 from ..crud.discipline import (
@@ -27,11 +28,97 @@ from ..schemas.discipline import (
     TeacherInfo,
     AssignedByInfo,
 )
+from ..schemas.auth import SchoolAdminRegisterRequest, SchoolAdminRegisterResponse
+from ..auth.hashing import get_password_hash
+from ..auth.jwt_handler import create_access_token
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+
+# ========== Регистрация школьного администратора ==========
+
+@router.post("/register", status_code=status.HTTP_201_CREATED, response_model=SchoolAdminRegisterResponse)
+def register_school_admin(
+    request_data: SchoolAdminRegisterRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Регистрация администратора школы
+
+    Требуется:
+    - full_name: Полное имя
+    - email: Email (уникальный)
+    - password: Пароль (минимум 4 символа)
+    - school_code: Код школы (7-значный код)
+
+    После регистрации автоматически выполняется вход и возвращается access_token
+    """
+    logger.info(f"School admin registration attempt for email: {request_data.email}")
+
+    # Проверяем что email уникален
+    existing_user = db.query(User).filter(User.email == request_data.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь с таким email уже существует"
+        )
+
+    # Проверяем что школа существует
+    school = db.query(School).filter(School.code == request_data.school_code).first()
+    if not school:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Школа с таким кодом не найдена"
+        )
+
+    # Хешируем пароль
+    hashed_password = get_password_hash(request_data.password)
+
+    # Создаем пользователя с ролью school_admin
+    new_admin = User(
+        full_name=request_data.full_name,
+        email=request_data.email,
+        hashed_password=hashed_password,
+        role=RoleEnum.school_admin,
+        school_id=school.id,
+        is_verified=True  # Админы автоматически верифицированы
+    )
+
+    try:
+        db.add(new_admin)
+        db.commit()
+        db.refresh(new_admin)
+
+        logger.info(f"School admin created successfully: {new_admin.email} (ID: {new_admin.id}) for school {school.name}")
+
+        # Генерируем токен для автоматического входа
+        access_token = create_access_token(data={
+            "sub": str(new_admin.id),
+            "role": new_admin.role.value
+        })
+
+        return SchoolAdminRegisterResponse(
+            access_token=access_token,
+            token_type="bearer",
+            role=new_admin.role.value,
+            email=new_admin.email,
+            full_name=new_admin.full_name,
+            school_id=new_admin.school_id,
+            user_id=new_admin.id
+        )
+
+    except IntegrityError as e:
+        db.rollback()
+        logger.error(f"Database error during school admin registration: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при создании администратора школы"
+        )
+
+
+# ========== Helper Functions ==========
 
 def ensure_school_admin(user: User):
     """Проверка что пользователь - администратор школы"""

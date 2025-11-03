@@ -138,6 +138,17 @@ def create_app() -> FastAPI:
             ))
             print(f"✅ Создан администратор школы: admin@example.com (пароль: 1234)")
 
+        superadmin = db.query(User).filter(User.email == "superadmin@example.com").first()
+        if not superadmin:
+            db.add(User(
+                full_name="Super Administrator",
+                email="superadmin@example.com",
+                hashed_password=get_password_hash("1234"),
+                role=RoleEnum.superadmin,
+                school_id=None  # Суперадмин не привязан к школе
+            ))
+            print(f"✅ Создан суперадминистратор: superadmin@example.com (пароль: 1234)")
+
         db.commit()
         db.close()
 
