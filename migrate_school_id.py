@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Безопасная миграция для таблицы register_requests.
-- Создаёт таблицу если её нет
-- Делает school_id nullable если таблица уже существует
+Безопасная миграция для таблиц register_requests и invite_codes.
+- Создаёт таблицы если их нет
+- Делает school_id nullable в register_requests если таблица уже существует
 """
 import os
 import sys
 from sqlalchemy import create_engine, text
 
-def migrate_register_requests():
-    """Создаёт или обновляет таблицу register_requests"""
+def migrate_tables():
+    """Создаёт или обновляет таблицы register_requests и invite_codes"""
     database_url = os.getenv("DATABASE_URL")
 
     if not database_url:
@@ -20,6 +20,7 @@ def migrate_register_requests():
         engine = create_engine(database_url)
 
         with engine.connect() as conn:
+            # ========== Миграция таблицы register_requests ==========
             # Проверяем существование таблицы
             result = conn.execute(text("""
                 SELECT EXISTS (
@@ -68,6 +69,35 @@ def migrate_register_requests():
             else:
                 print("ℹ️  register_requests table already exists with nullable school_id")
 
+            # ========== Миграция таблицы invite_codes ==========
+            # Проверяем существование таблицы invite_codes
+            result = conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'invite_codes'
+                );
+            """))
+            invite_codes_exists = result.scalar()
+
+            if not invite_codes_exists:
+                # Таблица не существует - создаём
+                print("📝 Creating invite_codes table...")
+                conn.execute(text("""
+                    CREATE TABLE invite_codes (
+                        id SERIAL PRIMARY KEY,
+                        code VARCHAR UNIQUE NOT NULL,
+                        teacher_id INTEGER REFERENCES users(id) NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        used BOOLEAN DEFAULT FALSE
+                    );
+                    CREATE INDEX idx_invite_codes_code ON invite_codes(code);
+                    CREATE INDEX idx_invite_codes_teacher_id ON invite_codes(teacher_id);
+                """))
+                conn.commit()
+                print("✅ Successfully created invite_codes table")
+            else:
+                print("ℹ️  invite_codes table already exists")
+
     except Exception as e:
         print(f"❌ Migration failed: {e}")
         import traceback
@@ -75,5 +105,5 @@ def migrate_register_requests():
         sys.exit(1)
 
 if __name__ == "__main__":
-    migrate_register_requests()
+    migrate_tables()
 
