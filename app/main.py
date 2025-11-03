@@ -16,6 +16,8 @@ from app.routers import (
     registration_requests,
     invites,
     student,
+    teacher,
+    admin,
 )
 
 from app.database import SessionLocal
@@ -91,6 +93,8 @@ def create_app() -> FastAPI:
     app.include_router(registration_requests.router)
     app.include_router(invites.router)
     app.include_router(students_router, tags=["Students"])
+    app.include_router(teacher.router, prefix="/api", tags=["Teacher"])
+    app.include_router(admin.router, prefix="/api", tags=["Admin"])
 
     @app.on_event("startup")
     def create_test_data():
@@ -122,6 +126,17 @@ def create_app() -> FastAPI:
                 role=RoleEnum.student,
                 school_id=school.id
             ))
+
+        admin = db.query(User).filter(User.email == "admin@example.com").first()
+        if not admin:
+            db.add(User(
+                full_name="Test School Admin",
+                email="admin@example.com",
+                hashed_password=get_password_hash("1234"),
+                role=RoleEnum.school_admin,
+                school_id=school.id
+            ))
+            print(f"✅ Создан администратор школы: admin@example.com (пароль: 1234)")
 
         db.commit()
         db.close()
