@@ -24,7 +24,12 @@ def generate_random_code(length: int = 6) -> str:
 def create_invite_code(db: Session, teacher_id: int, ttl_days: int = None) -> InviteCode:
     """
     Создать уникальный инвайт-код для преподавателя (used=False).
-    Код действителен БЕСКОНЕЧНО, пока преподаватель не удалит его.
+
+    ВАЖНО: При создании нового кода все старые НЕИСПОЛЬЗОВАННЫЕ коды
+    этого преподавателя автоматически удаляются. Это предотвращает
+    использование старых кодов посторонними людьми.
+
+    Использованные коды (used=True) остаются в истории.
 
     Args:
         db: Сессия БД
@@ -39,6 +44,21 @@ def create_invite_code(db: Session, teacher_id: int, ttl_days: int = None) -> In
         SQLAlchemyError: При ошибках базы данных
     """
     logger.info(f"Создание кода приглашения для преподавателя ID: {teacher_id}")
+
+    # Удаляем все старые неиспользованные коды этого преподавателя
+    old_unused_codes = (
+        db.query(InviteCode)
+        .filter(InviteCode.teacher_id == teacher_id, InviteCode.used == False)
+        .all()
+    )
+
+    if old_unused_codes:
+        logger.info(f"Удаление {len(old_unused_codes)} старых неиспользованных кодов преподавателя {teacher_id}")
+        for old_code in old_unused_codes:
+            logger.debug(f"Удаление старого кода: {old_code.code}")
+            db.delete(old_code)
+        db.commit()
+        logger.info("Старые коды успешно удалены")
 
     for attempt in range(5):  # до 5 попыток на случай коллизий по unique(code)
         code = generate_random_code()
