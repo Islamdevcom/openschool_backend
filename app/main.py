@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 import os
 import logging
 
@@ -26,6 +27,40 @@ from app.routers.student import router as students_router
 # Настройка логгера
 logger = logging.getLogger(__name__)
 
+
+# Custom middleware для CORS - добавляет заголовки ДО любой обработки
+class CustomCORSMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, allowed_origins):
+        super().__init__(app)
+        self.allowed_origins = allowed_origins
+
+    async def dispatch(self, request: Request, call_next):
+        # Получаем origin из запроса
+        origin = request.headers.get("origin")
+
+        # Обрабатываем preflight OPTIONS запросы
+        if request.method == "OPTIONS":
+            response = JSONResponse(content={}, status_code=200)
+        else:
+            try:
+                response = await call_next(request)
+            except Exception as e:
+                logger.error(f"Ошибка в обработке запроса: {str(e)}", exc_info=True)
+                response = JSONResponse(
+                    status_code=500,
+                    content={"detail": f"Internal server error: {str(e)}"}
+                )
+
+        # ВСЕГДА добавляем CORS заголовки
+        if origin and (origin in self.allowed_origins or "*" in self.allowed_origins):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+            response.headers["Access-Control-Expose-Headers"] = "*"
+
+        return response
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="OpenSchool AI",
@@ -40,25 +75,10 @@ def create_app() -> FastAPI:
     )
     allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",")]
 
-    print(f"🔒 CORS настройки: разрешенные origins = {allowed_origins}")
+    logger.info(f"🔒 CORS настройки: разрешенные origins = {allowed_origins}")
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed_origins,  # Explicit список origins для работы с credentials
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=["*"],
-        expose_headers=["*"],
-    )
-
-    # Обработчик для всех необработанных исключений - гарантирует CORS заголовки даже при ошибках
-    @app.exception_handler(Exception)
-    async def global_exception_handler(request: Request, exc: Exception):
-        logger.error(f"Необработанное исключение: {type(exc).__name__}: {str(exc)}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"detail": f"Внутренняя ошибка сервера: {str(exc)}"},
-        )
+    # Используем custom CORS middleware для гарантированной работы CORS
+    app.add_middleware(CustomCORSMiddleware, allowed_origins=allowed_origins)
 
     # Подключаем роутеры
     app.include_router(auth.router, prefix="/auth", tags=["Auth"])
