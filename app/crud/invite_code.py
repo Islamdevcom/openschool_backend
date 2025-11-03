@@ -21,15 +21,15 @@ def generate_random_code(length: int = 6) -> str:
     return ''.join(random.choices(ALPHABET, k=length))
 
 
-def create_invite_code(db: Session, teacher_id: int, ttl_days: int = 7) -> InviteCode:
+def create_invite_code(db: Session, teacher_id: int, ttl_days: int = None) -> InviteCode:
     """
     Создать уникальный инвайт-код для преподавателя (used=False).
-    TTL контролируем при использовании (см. _is_expired).
+    Код действителен БЕСКОНЕЧНО, пока преподаватель не удалит его.
 
     Args:
         db: Сессия БД
         teacher_id: ID преподавателя
-        ttl_days: Срок действия кода в днях (по умолчанию 7)
+        ttl_days: Устаревший параметр (оставлен для обратной совместимости)
 
     Returns:
         InviteCode: Созданный объект кода приглашения
@@ -69,7 +69,7 @@ def _is_expired(invite: InviteCode, ttl_days: int = 7) -> bool:
 def use_invite_code(db: Session, code: str, student_id: int) -> str:
     """
     Использовать код приглашения:
-    - Валидируем и проверяем TTL/used
+    - Валидируем код (без проверки срока действия - коды бесконечные)
     - Создаём запись в teacher_student_relations
     - Помечаем инвайт used=True
 
@@ -79,7 +79,11 @@ def use_invite_code(db: Session, code: str, student_id: int) -> str:
         student_id: ID студента
 
     Returns:
-        str: Статус операции - "success" | "expired" | "invalid" | "student_not_found" | "already_linked"
+        str: Статус операции:
+            - "success": Успешно подключились к преподавателю
+            - "invalid": Код не существует или уже использован
+            - "student_not_found": Студент не найден
+            - "already_linked": Уже подключен к этому преподавателю
     """
     logger.info(f"Использование кода приглашения '{code}' студентом ID: {student_id}")
 
@@ -98,10 +102,9 @@ def use_invite_code(db: Session, code: str, student_id: int) -> str:
             logger.warning(f"Код '{code}' не найден в базе данных")
         return "invalid"
 
-    logger.debug(f"Код '{code}' найден, проверяем срок действия...")
-    if _is_expired(invite):
-        logger.warning(f"Код '{code}' просрочен")
-        return "expired"
+    # Убрали проверку срока действия - коды бесконечные!
+    # if _is_expired(invite):
+    #     return "expired"
 
     student = db.query(User).filter(User.id == student_id).first()
 

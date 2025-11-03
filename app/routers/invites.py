@@ -98,21 +98,39 @@ def use_invite_code_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """
+    Использовать код приглашения от преподавателя.
+
+    Возможные ответы:
+    - 200: Успешно подключились к преподавателю
+    - 400: Уже подключены к этому преподавателю
+    - 404: Код не существует или уже использован
+    """
     ensure_student(current_user)
     status = use_invite(db, data.code, current_user.id)
 
-    if status == "expired":
-        raise HTTPException(status_code=400, detail="Invite code expired")
     if status == "student_not_found":
-        raise HTTPException(status_code=404, detail="Student not found")
-    if status == "invalid":
-        raise HTTPException(status_code=404, detail="Invalid or used code")
-    if status == "already_linked":
-        raise HTTPException(status_code=400, detail="Already connected to this teacher")
-    if status == "success":
-        return {"message": "Successfully connected to teacher"}
+        raise HTTPException(status_code=404, detail="Студент не найден")
 
-    raise HTTPException(status_code=400, detail=f"Unknown status: {status}")
+    if status == "invalid":
+        raise HTTPException(
+            status_code=404,
+            detail="Такой код не существует или уже был использован"
+        )
+
+    if status == "already_linked":
+        raise HTTPException(
+            status_code=400,
+            detail="Вы уже подключены к этому преподавателю"
+        )
+
+    if status == "success":
+        return {
+            "success": True,
+            "message": "Вы успешно подключились к преподавателю!"
+        }
+
+    raise HTTPException(status_code=400, detail=f"Неизвестная ошибка: {status}")
 
 
 @router.get("/mine")
