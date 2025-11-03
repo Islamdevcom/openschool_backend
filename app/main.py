@@ -18,6 +18,7 @@ from app.routers import (
     student,
     teacher,
     admin,
+    superadmin,
     init,
 )
 
@@ -97,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(students_router, tags=["Students"])
     app.include_router(teacher.router, prefix="/api", tags=["Teacher"])
     app.include_router(admin.router, prefix="/api", tags=["Admin"])
+    app.include_router(superadmin.router, prefix="/api", tags=["Superadmin"])
 
     @app.on_event("startup")
     def create_test_data():
