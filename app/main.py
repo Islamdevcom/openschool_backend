@@ -18,6 +18,8 @@ from app.routers import (
     student,
     teacher,
     admin,
+    superadmin,
+    init,
 )
 
 from app.database import SessionLocal
@@ -83,6 +85,7 @@ def create_app() -> FastAPI:
     app.add_middleware(CustomCORSMiddleware, allowed_origins=allowed_origins)
 
     # Подключаем роутеры
+    app.include_router(init.router, tags=["Initialization"])
     app.include_router(auth.router, prefix="/auth", tags=["Auth"])
     app.include_router(users.router)
     app.include_router(lectures.router, prefix="/lectures", tags=["Lectures"])
@@ -95,6 +98,7 @@ def create_app() -> FastAPI:
     app.include_router(students_router, tags=["Students"])
     app.include_router(teacher.router, prefix="/api", tags=["Teacher"])
     app.include_router(admin.router, prefix="/api", tags=["Admin"])
+    app.include_router(superadmin.router, prefix="/api", tags=["Superadmin"])
 
     @app.on_event("startup")
     def create_test_data():
