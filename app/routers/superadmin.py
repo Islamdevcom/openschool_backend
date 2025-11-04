@@ -278,3 +278,152 @@ def create_school(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ошибка при создании школы"
         )
+
+
+@router.get("/users", response_model=dict)
+def get_all_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Получить список всех пользователей (только для суперадмина)
+
+    Возвращает всех пользователей системы с их ролями и школами.
+    Используется для выбора пользователя которого нужно назначить админом школы.
+
+    **Response:**
+    ```json
+    {
+        "success": true,
+        "data": [
+            {
+                "id": 1,
+                "full_name": "Иван Иванов",
+                "email": "ivan@example.com",
+                "role": "teacher",
+                "school_id": 1,
+                "school_name": "Школа №1"
+            }
+        ]
+    }
+    ```
+    """
+    ensure_superadmin(current_user)
+    logger.info(f"Superadmin {current_user.id} requesting all users")
+
+    users = db.query(User).order_by(User.id.desc()).all()
+
+    users_data = []
+    for user in users:
+        school_name = user.school.name if user.school else None
+
+        users_data.append({
+            "id": user.id,
+            "full_name": user.full_name,
+            "email": user.email,
+            "role": user.role.value,
+            "school_id": user.school_id,
+            "school_name": school_name,
+            "is_verified": user.is_verified
+        })
+
+    logger.info(f"Returning {len(users_data)} users")
+
+    return {
+        "success": True,
+        "data": users_data
+    }
+
+
+class PromoteToSchoolAdminRequest(BaseModel):
+    """Назначение существующего пользователя админом школы"""
+    user_id: int = Field(..., gt=0, description="ID пользователя")
+    school_id: int = Field(..., gt=0, description="ID школы")
+
+    model_config = {"extra": "ignore"}
+
+
+@router.post("/promote-to-school-admin", response_model=dict)
+def promote_to_school_admin(
+    request_data: PromoteToSchoolAdminRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Назначить существующего пользователя администратором школы (только для суперадмина)
+
+    Изменяет роль пользователя на school_admin и привязывает к школе.
+
+    **Требования:**
+    - user_id: ID существующего пользователя
+    - school_id: ID школы
+
+    **Пример:**
+    ```json
+    {
+        "user_id": 5,
+        "school_id": 1
+    }
+    ```
+    """
+    ensure_superadmin(current_user)
+    logger.info(f"Superadmin {current_user.id} promoting user {request_data.user_id} to school admin")
+
+    # Проверяем что пользователь существует
+    user = db.query(User).filter(User.id == request_data.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
+
+    # Проверяем что школа существует
+    school = db.query(School).filter(School.id == request_data.school_id).first()
+    if not school:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Школа не найдена"
+        )
+
+    # Проверяем что это не суперадмин (его нельзя изменять)
+    if user.role == RoleEnum.superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Нельзя изменить роль суперадминистратора"
+        )
+
+    # Сохраняем старую роль для логирования
+    old_role = user.role.value
+
+    # Изменяем роль на school_admin и привязываем к школе
+    user.role = RoleEnum.school_admin
+    user.school_id = school.id
+    user.is_verified = True  # Админы всегда верифицированы
+
+    try:
+        db.commit()
+        db.refresh(user)
+
+        logger.info(f"User {user.id} promoted from {old_role} to school_admin for school {school.name}")
+
+        return {
+            "success": True,
+            "message": f"Пользователь {user.full_name} назначен администратором школы {school.name}",
+            "data": {
+                "user_id": user.id,
+                "full_name": user.full_name,
+                "email": user.email,
+                "old_role": old_role,
+                "new_role": user.role.value,
+                "school_id": school.id,
+                "school_name": school.name
+            }
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error promoting user to school admin: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при назначении администратора школы"
+        )
