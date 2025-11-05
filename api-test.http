@@ -1,0 +1,53 @@
+### Переменные
+@baseUrl = https://openschoolbackend-production.up.railway.app
+@superadminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMSIsInJvbGUiOiJzdXBlcmFkbWluIiwiZXhwIjoxNzYyMzM3NDQ2fQ.z3QzKWO2KVGj0Oz8ICioktPe2w84jyF854sDrGRRCrE
+
+###############################################
+# 1. Создать школу
+###############################################
+POST {{baseUrl}}/api/superadmin/create-school
+Authorization: Bearer {{superadminToken}}
+Content-Type: application/json
+
+{
+  "name": "International school Haileybury Almaty",
+  "code": "SCHOOL1"
+}
+
+###############################################
+# 2. Получить список всех школ
+###############################################
+GET {{baseUrl}}/api/superadmin/schools
+Authorization: Bearer {{superadminToken}}
+
+###############################################
+# 3. Создать школьного админа
+# ВАЖНО: Замените school_id на ID из ответа выше!
+###############################################
+POST {{baseUrl}}/api/superadmin/create-school-admin
+Authorization: Bearer {{superadminToken}}
+Content-Type: application/json
+
+{
+  "full_name": "Админ Школы",
+  "email": "admin@haileybury.com",
+  "password": "Admin123!",
+  "school_id": 1
+}
+
+###############################################
+# 4. Вход школьного админа
+###############################################
+POST {{baseUrl}}/auth/admin/login
+Content-Type: application/json
+
+{
+  "email": "admin@haileybury.com",
+  "password": "Admin123!"
+}
+
+###############################################
+# 5. Получить список всех пользователей (суперадмин)
+###############################################
+GET {{baseUrl}}/api/superadmin/users
+Authorization: Bearer {{superadminToken}}
