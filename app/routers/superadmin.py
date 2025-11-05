@@ -56,6 +56,8 @@ class SchoolListItem(BaseModel):
     id: int
     name: str
     code: str
+    address: str | None
+    max_users: int
 
     model_config = {"from_attributes": True}
 
@@ -63,7 +65,9 @@ class SchoolListItem(BaseModel):
 class CreateSchoolRequest(BaseModel):
     """Создание школы"""
     name: str = Field(..., min_length=2, max_length=200, description="Название школы")
-    code: str = Field(..., min_length=4, max_length=20, description="Код школы (7 символов)")
+    code: str = Field(..., min_length=4, max_length=20, description="Код школы")
+    address: str | None = Field(None, max_length=500, description="Адрес школы (необязательно)")
+    max_users: int = Field(500, gt=0, le=10000, description="Максимальное количество пользователей (по умолчанию 500)")
 
     model_config = {"extra": "ignore"}
 
@@ -73,6 +77,8 @@ class CreateSchoolResponse(BaseModel):
     id: int
     name: str
     code: str
+    address: str | None
+    max_users: int
     message: str
 
     model_config = {"from_attributes": True}
@@ -222,13 +228,17 @@ def create_school(
 
     **Требования:**
     - name: Название школы (уникальное)
-    - code: Код школы (уникальный, 7 символов рекомендуется)
+    - code: Код школы (уникальный)
+    - address: Адрес школы (необязательно)
+    - max_users: Максимальное количество пользователей (по умолчанию 500)
 
     **Пример:**
     ```json
     {
         "name": "МАОУ Гимназия №125",
-        "code": "SCHO125"
+        "code": "SCHO125",
+        "address": "г. Москва, ул. Ленина, д. 1",
+        "max_users": 1000
     }
     ```
     """
@@ -254,7 +264,9 @@ def create_school(
     # Создаем школу
     new_school = School(
         name=request_data.name,
-        code=request_data.code
+        code=request_data.code,
+        address=request_data.address,
+        max_users=request_data.max_users
     )
 
     try:
@@ -262,12 +274,14 @@ def create_school(
         db.commit()
         db.refresh(new_school)
 
-        logger.info(f"School created: {new_school.name} (ID: {new_school.id}, code: {new_school.code})")
+        logger.info(f"School created: {new_school.name} (ID: {new_school.id}, code: {new_school.code}, max_users: {new_school.max_users})")
 
         return CreateSchoolResponse(
             id=new_school.id,
             name=new_school.name,
             code=new_school.code,
+            address=new_school.address,
+            max_users=new_school.max_users,
             message="Школа успешно создана"
         )
 
