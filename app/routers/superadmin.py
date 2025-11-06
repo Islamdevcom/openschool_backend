@@ -204,7 +204,9 @@ def get_all_schools(
         SchoolListItem(
             id=school.id,
             name=school.name,
-            code=school.code
+            code=school.code,
+            address=school.address,
+            max_users=school.max_users
         ).model_dump()
         for school in schools
     ]
