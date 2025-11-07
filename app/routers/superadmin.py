@@ -219,6 +219,61 @@ def get_all_schools(
     }
 
 
+@router.get("/admins", response_model=dict)
+def get_all_admins(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Получить список всех школьных администраторов (только для суперадмина)
+
+    Возвращает только пользователей с ролью school_admin.
+
+    **Response:**
+    ```json
+    {
+        "success": true,
+        "data": [
+            {
+                "id": 5,
+                "full_name": "Мария Иванова",
+                "email": "maria@school125.edu",
+                "school_id": 12,
+                "school_name": "Школа №125",
+                "is_verified": true,
+                "created_at": "2025-11-06T12:30:00Z"
+            }
+        ]
+    }
+    ```
+    """
+    ensure_superadmin(current_user)
+    logger.info(f"Superadmin {current_user.id} requesting all school admins")
+
+    # Получаем только пользователей с ролью school_admin
+    admins = db.query(User).filter(User.role == RoleEnum.school_admin).order_by(User.id.desc()).all()
+
+    admins_data = []
+    for admin in admins:
+        school_name = admin.school.name if admin.school else None
+
+        admins_data.append({
+            "id": admin.id,
+            "full_name": admin.full_name,
+            "email": admin.email,
+            "school_id": admin.school_id,
+            "school_name": school_name,
+            "is_verified": admin.is_verified
+        })
+
+    logger.info(f"Returning {len(admins_data)} school admins")
+
+    return {
+        "success": True,
+        "data": admins_data
+    }
+
+
 @router.post("/create-school", status_code=status.HTTP_201_CREATED, response_model=CreateSchoolResponse)
 def create_school(
     request_data: CreateSchoolRequest,
