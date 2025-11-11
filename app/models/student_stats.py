@@ -20,4 +20,4 @@ class StudentStats(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # Связь с таблицей users
-    student = relationship("User", foreign_keys=[student_user_id])
+    student = relationship("User", foreign_keys="StudentStats.student_user_id")

@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship as sql_relationship
 from app.database import Base
 
 
@@ -19,8 +19,8 @@ class ParentChild(Base):
     created_at = Column(DateTime, server_default=func.now())
 
     # Связи с таблицей users
-    parent = relationship("User", foreign_keys=[parent_user_id])
-    student = relationship("User", foreign_keys=[student_user_id])
+    parent = sql_relationship("User", foreign_keys="ParentChild.parent_user_id")
+    student = sql_relationship("User", foreign_keys="ParentChild.student_user_id")
 
     # Уникальное ограничение: один родитель не может быть дважды привязан к одному ребенку
     __table_args__ = (
