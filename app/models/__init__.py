@@ -10,6 +10,8 @@ from app.models.student import Student
 from app.models.student_activity import StudentActivity
 from app.models.discipline import Discipline
 from app.models.teacher_discipline import TeacherDiscipline
+from app.models.parent_child import ParentChild
+from app.models.student_stats import StudentStats
 
 __all__ = [
     "Base",
@@ -24,4 +26,6 @@ __all__ = [
     "StudentActivity",
     "Discipline",
     "TeacherDiscipline",
+    "ParentChild",
+    "StudentStats",
 ]

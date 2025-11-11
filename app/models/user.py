@@ -6,6 +6,7 @@ import enum
 class RoleEnum(str, enum.Enum):
     teacher = "teacher"
     student = "student"
+    parent = "parent"
     school_admin = "school_admin"
     superadmin = "superadmin"
 
