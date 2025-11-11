@@ -22,7 +22,7 @@ def upgrade() -> None:
     """Upgrade schema."""
 
     # 1. Добавляем роль 'parent' в enum RoleEnum
-    # Для PostgreSQL нужно использовать ALTER TYPE ... ADD VALUE
+    # Используем безопасный подход для PostgreSQL
     conn = op.get_bind()
 
     # Проверяем, существует ли уже значение 'parent'
@@ -38,12 +38,20 @@ def upgrade() -> None:
     parent_exists = result.scalar()
 
     if not parent_exists:
-        conn.execute(sa.text("""
-            ALTER TYPE roleenum ADD VALUE 'parent';
-        """))
-        print("✅ Added 'parent' value to roleenum")
-    else:
-        print("ℹ️  'parent' value already exists in roleenum, skipping")
+        # Для PostgreSQL < 12: используем простой ALTER TYPE
+        # Для PostgreSQL >= 12: используем IF NOT EXISTS
+        # Обрабатываем обе версии
+        try:
+            # Попытка с IF NOT EXISTS (PostgreSQL 12+)
+            conn.execute(sa.text("ALTER TYPE roleenum ADD VALUE IF NOT EXISTS 'parent'"))
+        except sa.exc.DBAPIError:
+            # Fallback для старых версий PostgreSQL
+            try:
+                conn.execute(sa.text("ALTER TYPE roleenum ADD VALUE 'parent'"))
+            except sa.exc.DBAPIError as e:
+                # Если значение уже существует - продолжаем
+                if 'already exists' not in str(e):
+                    raise
 
     # 2. Создаем таблицу parent_child
     op.create_table('parent_child',
