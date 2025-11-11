@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 import logging
+from typing import Optional, List
 
 from app.database import get_db
 from app.models.user import User, RoleEnum
+from app.models.parent_child import ParentChild
+from app.models.student_stats import StudentStats
 from app.schemas.auth import LoginRequest
 from app.auth.hashing import verify_password
 from app.auth.jwt_handler import create_access_token
@@ -32,11 +35,11 @@ def _authenticate_user(email: str, password: str, db: Session) -> User:
     return user
 
 
-def _generate_token_response(user: User) -> dict:
+def _generate_token_response(user: User, children_data: Optional[List[dict]] = None) -> dict:
     """Общая функция генерации ответа с токеном"""
     token = create_access_token(data={"sub": str(user.id), "role": user.role.value})
 
-    return {
+    response = {
         "access_token": token,
         "token_type": "bearer",
         "role": user.role.value,
@@ -45,6 +48,12 @@ def _generate_token_response(user: User) -> dict:
         "school_id": user.school_id
     }
 
+    # Для родителей добавляем информацию о детях
+    if children_data is not None:
+        response["children"] = children_data
+
+    return response
+
 
 @router.post("/login")
 def login(
@@ -52,7 +61,7 @@ def login(
     db: Session = Depends(get_db)
 ):
     """
-    Вход для УЧИТЕЛЕЙ и СТУДЕНТОВ
+    Вход для УЧИТЕЛЕЙ, СТУДЕНТОВ и РОДИТЕЛЕЙ
 
     Для администраторов используйте:
     - /auth/admin/login (школьные администраторы)
@@ -62,13 +71,64 @@ def login(
 
     user = _authenticate_user(request.email, request.password, db)
 
-    # Проверяем что это teacher или student
-    if user.role not in [RoleEnum.teacher, RoleEnum.student]:
+    # Проверяем что это teacher, student или parent
+    if user.role not in [RoleEnum.teacher, RoleEnum.student, RoleEnum.parent]:
         logger.warning(f"User {user.email} tried to login via /auth/login with role {user.role}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Используйте специальный вход для администраторов"
         )
+
+    # Для родителей - проверяем привязанных детей
+    if user.role == RoleEnum.parent:
+        logger.info(f"Parent {user.email} logging in, checking children...")
+
+        # Получаем связи с детьми
+        parent_links = db.query(ParentChild).filter(
+            ParentChild.parent_user_id == user.id
+        ).all()
+
+        if not parent_links:
+            logger.warning(f"Parent {user.email} has no linked children")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="У вас нет привязанных детей. Обратитесь к администратору школы."
+            )
+
+        # Получаем данные о детях
+        children_data = []
+        for link in parent_links:
+            # Получаем студента
+            student = db.query(User).filter(User.id == link.student_user_id).first()
+            if not student:
+                continue
+
+            # Получаем статистику студента
+            stats = db.query(StudentStats).filter(
+                StudentStats.student_user_id == student.id
+            ).first()
+
+            # Получаем информацию о классе (grade)
+            # Примечание: В текущей модели User нет поля grade
+            # Можно получить из таблицы students, если она используется
+            from app.models.student import Student
+            student_info = db.query(Student).filter(Student.email == student.email).first()
+
+            child_data = {
+                "id": student.id,
+                "name": student.full_name,
+                "email": student.email,
+                "grade": student_info.grade if student_info else None,
+                "relationship": link.relationship,
+                "avgGrade": float(stats.avg_grade) if stats and stats.avg_grade else 0.0,
+                "attendance": float(stats.attendance) if stats and stats.attendance else 0.0,
+                "warnings": stats.warnings if stats else 0,
+                "behavior": float(stats.behavior) if stats and stats.behavior else 0.0
+            }
+            children_data.append(child_data)
+
+        logger.info(f"Parent {user.email} logged in successfully with {len(children_data)} children")
+        return _generate_token_response(user, children_data=children_data)
 
     logger.info(f"User {user.email} logged in successfully as {user.role}")
     return _generate_token_response(user)
