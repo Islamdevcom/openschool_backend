@@ -9,7 +9,7 @@ from app.models.parent_child import ParentChild
 from app.models.student_stats import StudentStats
 from app.models.student import Student
 from app.models.teacher_discipline import TeacherDiscipline
-from app.auth.dependencies import get_current_user
+from app.dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
 
