@@ -12,6 +12,7 @@ from app.models.discipline import Discipline
 from app.models.teacher_discipline import TeacherDiscipline
 from app.models.parent_child import ParentChild
 from app.models.student_stats import StudentStats
+from app.models.generated_content import GeneratedContent, ToolUsageLog
 
 __all__ = [
     "Base",
@@ -28,4 +29,6 @@ __all__ = [
     "TeacherDiscipline",
     "ParentChild",
     "StudentStats",
+    "GeneratedContent",
+    "ToolUsageLog",
 ]
