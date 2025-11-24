@@ -21,6 +21,7 @@ from app.routers import (
     superadmin,
     init,
     parents,
+    tools,
 )
 
 from app.database import SessionLocal
@@ -101,6 +102,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router, prefix="/api")  # Теги указаны в роутере
     app.include_router(superadmin.router, prefix="/api")  # Теги указаны в роутере
     app.include_router(parents.router)  # Теги указаны в роутере
+    app.include_router(tools.router)  # AI-инструменты для учителей
 
     @app.on_event("startup")
     def create_test_data():
