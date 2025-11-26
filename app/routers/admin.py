@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import logging
@@ -10,6 +10,7 @@ from ..models.user import User, RoleEnum
 from ..models.school import School
 from ..models.discipline import Discipline
 from ..models.teacher_discipline import TeacherDiscipline
+from ..models.discipline_file import DisciplineFile
 from ..models.parent_child import ParentChild
 from ..models.student_stats import StudentStats
 from ..models.student import Student
@@ -23,6 +24,12 @@ from ..crud.discipline import (
     remove_discipline_from_teacher,
     get_discipline_teachers,
 )
+from ..crud.discipline_file import (
+    save_discipline_file,
+    get_discipline_files,
+    get_file_by_id,
+    delete_discipline_file,
+)
 from ..schemas.discipline import (
     DisciplineCreate,
     DisciplineResponse,
@@ -32,6 +39,10 @@ from ..schemas.discipline import (
     DisciplineWithTeachers,
     TeacherInfo,
     AssignedByInfo,
+)
+from ..schemas.discipline_file import (
+    DisciplineFileResponse,
+    DisciplineWithFilesResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -810,3 +821,285 @@ def get_parent_info(
         "is_active": getattr(parent, 'is_active', True),
         "children": children_data
     }
+
+
+# ========== Discipline Files Management ==========
+
+@router.post("/disciplines/{discipline_id}/files", status_code=status.HTTP_201_CREATED, response_model=dict)
+async def upload_discipline_file(
+    discipline_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Загрузить файл (книжку, материал) для дисциплины
+    
+    Args:
+        discipline_id: ID дисциплины
+        file: Загружаемый файл (PDF, DOC, DOCX, PPT, PPTX)
+    
+    Returns:
+        {
+            "success": true,
+            "message": "Файл успешно загружен",
+            "data": {...}
+        }
+    """
+    ensure_school_admin(current_user)
+    
+    logger.info(f"Admin {current_user.id} uploading file {file.filename} to discipline {discipline_id}")
+    
+    # Проверяем что дисциплина существует и принадлежит школе админа
+    discipline = get_discipline_by_id(db, discipline_id)
+    if not discipline:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Дисциплина не найдена"
+        )
+    
+    if discipline.school_id != current_user.school_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Вы можете загружать файлы только для дисциплин вашей школы"
+        )
+    
+    # Проверяем тип файла
+    allowed_types = ['pdf', 'doc', 'docx', 'ppt', 'pptx']
+    file_extension = file.filename.split('.')[-1].lower()
+    if file_extension not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Недопустимый тип файла. Разрешены: {', '.join(allowed_types)}"
+        )
+    
+    try:
+        # Сохраняем файл
+        discipline_file = await save_discipline_file(db, discipline_id, file, current_user.id)
+        
+        # Формируем response
+        file_response = DisciplineFileResponse(
+            id=discipline_file.id,
+            discipline_id=discipline_file.discipline_id,
+            filename=discipline_file.filename,
+            file_path=discipline_file.file_path,
+            file_type=discipline_file.file_type,
+            file_size=discipline_file.file_size,
+            uploaded_by=discipline_file.uploaded_by,
+            uploader_name=current_user.full_name,
+            created_at=discipline_file.created_at
+        )
+        
+        logger.info(f"Successfully uploaded file {discipline_file.id} to discipline {discipline_id}")
+        
+        return {
+            "success": True,
+            "message": "Файл успешно загружен",
+            "data": file_response.model_dump()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error uploading file: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при загрузке файла"
+        )
+
+
+@router.get("/disciplines/{discipline_id}/files", response_model=dict)
+def get_discipline_files_list(
+    discipline_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Получить список всех файлов дисциплины
+    
+    Returns:
+        {
+            "success": true,
+            "data": [...]
+        }
+    """
+    ensure_school_admin(current_user)
+    
+    # Проверяем что дисциплина существует и принадлежит школе админа
+    discipline = get_discipline_by_id(db, discipline_id)
+    if not discipline:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Дисциплина не найдена"
+        )
+    
+    if discipline.school_id != current_user.school_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Вы можете просматривать файлы только дисциплин вашей школы"
+        )
+    
+    try:
+        files = get_discipline_files(db, discipline_id)
+        
+        files_data = []
+        for file in files:
+            file_response = DisciplineFileResponse(
+                id=file.id,
+                discipline_id=file.discipline_id,
+                filename=file.filename,
+                file_path=file.file_path,
+                file_type=file.file_type,
+                file_size=file.file_size,
+                uploaded_by=file.uploaded_by,
+                uploader_name=file.uploader.full_name if file.uploader else None,
+                created_at=file.created_at
+            )
+            files_data.append(file_response.model_dump())
+        
+        logger.info(f"Found {len(files_data)} files for discipline {discipline_id}")
+        
+        return {
+            "success": True,
+            "data": files_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching discipline files: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при получении файлов"
+        )
+
+
+@router.delete("/disciplines/files/{file_id}", response_model=dict)
+def delete_discipline_file_endpoint(
+    file_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Удалить файл дисциплины
+    
+    Returns:
+        {
+            "success": true,
+            "message": "Файл успешно удален"
+        }
+    """
+    ensure_school_admin(current_user)
+    
+    logger.info(f"Admin {current_user.id} deleting file {file_id}")
+    
+    # Проверяем что файл существует
+    file = get_file_by_id(db, file_id)
+    if not file:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Файл не найден"
+        )
+    
+    # Проверяем что файл принадлежит дисциплине из школы админа
+    if file.discipline.school_id != current_user.school_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Вы можете удалять только файлы дисциплин вашей школы"
+        )
+    
+    try:
+        deleted = delete_discipline_file(db, file_id)
+        
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Файл не найден"
+            )
+        
+        logger.info(f"Successfully deleted file {file_id}")
+        
+        return {
+            "success": True,
+            "message": "Файл успешно удален"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting file: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при удалении файла"
+        )
+
+
+@router.put("/disciplines/{discipline_id}", response_model=dict)
+def update_discipline(
+    discipline_id: int,
+    discipline_data: DisciplineCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Обновить дисциплину (изменить название или класс)
+    
+    Request:
+        {
+            "subject": "Физика",
+            "grade": 8
+        }
+    
+    Returns:
+        {
+            "success": true,
+            "message": "Дисциплина успешно обновлена",
+            "data": {...}
+        }
+    """
+    ensure_school_admin(current_user)
+    
+    logger.info(f"Admin {current_user.id} updating discipline {discipline_id}")
+    
+    # Проверяем что дисциплина существует
+    discipline = get_discipline_by_id(db, discipline_id)
+    if not discipline:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Дисциплина не найдена"
+        )
+    
+    # Проверяем что дисциплина принадлежит школе админа
+    if discipline.school_id != current_user.school_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Вы можете редактировать только дисциплины вашей школы"
+        )
+    
+    try:
+        # Обновляем данные
+        discipline.subject = discipline_data.subject
+        discipline.grade = discipline_data.grade
+        
+        db.commit()
+        db.refresh(discipline)
+        
+        discipline_response = DisciplineResponse.from_orm_with_display_name(discipline)
+        
+        logger.info(f"Successfully updated discipline {discipline_id}")
+        
+        return {
+            "success": True,
+            "message": "Дисциплина успешно обновлена",
+            "data": discipline_response.model_dump()
+        }
+        
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Дисциплина с таким названием и классом уже существует"
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating discipline: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при обновлении дисциплины"
+        )

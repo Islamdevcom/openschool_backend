@@ -22,6 +22,7 @@ class Discipline(Base):
     # Relationships
     school = relationship("School", back_populates="disciplines")
     teacher_assignments = relationship("TeacherDiscipline", back_populates="discipline", cascade="all, delete-orphan")
+    files = relationship("DisciplineFile", back_populates="discipline", cascade="all, delete-orphan")
 
     # Constraints
     __table_args__ = (

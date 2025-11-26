@@ -9,6 +9,13 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.models.student import Student, StudentTypeEnum
 from app.models.student_activity import StudentActivity
+from app.models.discipline import Discipline
+from app.models.user import User
+from app.crud.discipline import get_discipline_teachers
+from app.crud.discipline_file import get_discipline_files
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["students"])
 
@@ -732,4 +739,85 @@ async def delete_ai_topic(
     return {
         "message": f"Удалено {deleted_count} записей по теме '{topic}'",
         "deleted_count": deleted_count
+    }
+
+# ========== Student Disciplines/Subjects ==========
+
+@router.get("/disciplines", response_model=dict)
+def get_student_disciplines(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Получить список предметов для ученика (предметы его класса)
+    
+    Returns:
+        {
+            "success": true,
+            "data": [
+                {
+                    "id": 15,
+                    "subject": "Физика",
+                    "grade": 7,
+                    "displayName": "Физика - 7 класс",
+                    "teacher_count": 2,
+                    "file_count": 3,
+                    "files": [...]
+                }
+            ]
+        }
+    """
+    # Получаем информацию об ученике
+    student_info = db.query(Student).filter(Student.email == current_user.email).first()
+    
+    if not student_info or not student_info.grade:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Информация об ученике не найдена или класс не указан"
+        )
+    
+    # Получаем все дисциплины класса ученика в его школе
+    disciplines = (
+        db.query(Discipline)
+        .filter(
+            Discipline.school_id == current_user.school_id,
+            Discipline.grade == student_info.grade
+        )
+        .order_by(Discipline.subject)
+        .all()
+    )
+    
+    data = []
+    for discipline in disciplines:
+        # Получаем учителей
+        teacher_count = len(get_discipline_teachers(db, discipline.id, active_only=True))
+        
+        # Получаем файлы
+        files = get_discipline_files(db, discipline.id)
+        files_data = []
+        for file in files:
+            files_data.append({
+                "id": file.id,
+                "filename": file.filename,
+                "file_type": file.file_type,
+                "file_size": file.file_size,
+                "created_at": file.created_at.isoformat()
+            })
+        
+        discipline_data = {
+            "id": discipline.id,
+            "subject": discipline.subject,
+            "grade": discipline.grade,
+            "displayName": f"{discipline.subject} - {discipline.grade} класс",
+            "teacher_count": teacher_count,
+            "file_count": len(files),
+            "files": files_data
+        }
+        data.append(discipline_data)
+    
+    logger.info(f"Student {current_user.id} fetched {len(data)} disciplines for grade {student_info.grade}")
+    
+    return {
+        "success": True,
+        "data": data
     }
