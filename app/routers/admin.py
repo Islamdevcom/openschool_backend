@@ -32,6 +32,8 @@ from ..schemas.discipline import (
     DisciplineWithTeachers,
     TeacherInfo,
     AssignedByInfo,
+    VALID_SUBJECTS,
+    SUBJECT_CODES,
 )
 
 logger = logging.getLogger(__name__)
@@ -199,6 +201,105 @@ def create_new_discipline(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ошибка при создании дисциплины"
+        )
+
+
+@router.get("/available-subjects", response_model=dict)
+def get_available_subjects(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Получить список доступных предметов для создания дисциплин
+
+    Returns:
+        {
+            "success": true,
+            "data": {
+                "subjects": ["Математика", "Физика", ...],
+                "subject_codes": {"Математика": "math", ...}
+            }
+        }
+    """
+    ensure_school_admin(current_user)
+
+    logger.info(f"Admin {current_user.id} requesting available subjects")
+
+    return {
+        "success": True,
+        "data": {
+            "subjects": VALID_SUBJECTS,
+            "subject_codes": SUBJECT_CODES
+        }
+    }
+
+
+@router.get("/teachers", response_model=dict)
+def get_school_teachers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Получить список всех учителей школы
+
+    Returns:
+        {
+            "success": true,
+            "data": [
+                {
+                    "id": 42,
+                    "name": "Анна Петровна Смирнова",
+                    "email": "a.smirnova@school125.edu",
+                    "disciplines_count": 3
+                }
+            ]
+        }
+    """
+    ensure_school_admin(current_user)
+
+    if current_user.school_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Администратор не привязан к школе"
+        )
+
+    logger.info(f"Admin {current_user.id} requesting all teachers for school {current_user.school_id}")
+
+    try:
+        # Получаем всех учителей школы
+        teachers = (
+            db.query(User)
+            .filter(User.school_id == current_user.school_id)
+            .filter(User.role == RoleEnum.teacher)
+            .order_by(User.full_name)
+            .all()
+        )
+
+        # Формируем response с количеством дисциплин
+        data = []
+        for teacher in teachers:
+            # Получаем количество активных дисциплин
+            disciplines = get_teacher_disciplines(db, teacher.id, active_only=True)
+
+            teacher_data = {
+                "id": teacher.id,
+                "name": teacher.full_name,
+                "email": teacher.email,
+                "disciplines_count": len(disciplines)
+            }
+            data.append(teacher_data)
+
+        logger.info(f"Found {len(data)} teachers for school {current_user.school_id}")
+
+        return {
+            "success": True,
+            "data": data
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching teachers for school {current_user.school_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при получении списка учителей"
         )
 
 
