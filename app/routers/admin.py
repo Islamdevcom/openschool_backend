@@ -13,6 +13,7 @@ from ..models.teacher_discipline import TeacherDiscipline
 from ..models.parent_child import ParentChild
 from ..models.student_stats import StudentStats
 from ..models.student import Student
+from ..models.registration_request import RegistrationRequest, RequestStatus
 from ..auth.hashing import get_password_hash
 from ..crud.discipline import (
     create_discipline,
@@ -1066,3 +1067,368 @@ def get_parent_info(
         "is_active": getattr(parent, 'is_active', True),
         "children": children_data
     }
+
+
+# ========== Registration Requests Management ==========
+
+@router.get("/registration-requests", response_model=dict)
+def get_registration_requests(
+    status_filter: Optional[str] = "pending",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Получить список заявок на регистрацию в школе
+
+    Args:
+        status_filter: Фильтр по статусу (pending, approved, rejected, all)
+
+    Returns:
+        {
+            "success": true,
+            "data": [
+                {
+                    "id": 15,
+                    "full_name": "Иван Петров",
+                    "email": "ivan@example.com",
+                    "role": "teacher",
+                    "status": "pending",
+                    "school_id": 1,
+                    "school_name": "Школа №125"
+                }
+            ]
+        }
+    """
+    ensure_school_admin(current_user)
+
+    if current_user.school_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Администратор не привязан к школе"
+        )
+
+    logger.info(f"Admin {current_user.id} requesting registration requests for school {current_user.school_id} with filter: {status_filter}")
+
+    try:
+        # Базовый запрос
+        query = db.query(RegistrationRequest).filter(
+            RegistrationRequest.school_id == current_user.school_id
+        )
+
+        # Фильтр по статусу
+        if status_filter and status_filter != "all":
+            if status_filter == "pending":
+                query = query.filter(RegistrationRequest.status == RequestStatus.pending)
+            elif status_filter == "approved":
+                query = query.filter(RegistrationRequest.status == RequestStatus.approved)
+            elif status_filter == "rejected":
+                query = query.filter(RegistrationRequest.status == RequestStatus.rejected)
+
+        requests = query.order_by(RegistrationRequest.id.desc()).all()
+
+        data = []
+        for req in requests:
+            req_data = {
+                "id": req.id,
+                "full_name": req.full_name,
+                "email": req.email,
+                "role": req.role,
+                "status": req.status.value if hasattr(req.status, 'value') else req.status,
+                "school_id": req.school_id,
+                "school_name": req.school.name if req.school else None
+            }
+            data.append(req_data)
+
+        logger.info(f"Found {len(data)} registration requests for school {current_user.school_id}")
+
+        return {
+            "success": True,
+            "data": data
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching registration requests: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при получении заявок"
+        )
+
+
+@router.post("/registration-requests/{request_id}/approve", response_model=dict)
+def approve_registration_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Одобрить заявку на регистрацию (создает пользователя)
+
+    Returns:
+        {
+            "success": true,
+            "message": "Заявка одобрена, пользователь создан",
+            "data": {
+                "user_id": 42,
+                "full_name": "Иван Петров",
+                "email": "ivan@example.com",
+                "role": "teacher"
+            }
+        }
+    """
+    ensure_school_admin(current_user)
+
+    if current_user.school_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Администратор не привязан к школе"
+        )
+
+    logger.info(f"Admin {current_user.id} approving registration request {request_id}")
+
+    # Проверяем что заявка существует
+    request = db.query(RegistrationRequest).filter(RegistrationRequest.id == request_id).first()
+    if not request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Заявка не найдена"
+        )
+
+    # Проверяем что заявка для нашей школы
+    if request.school_id != current_user.school_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Вы можете одобрять только заявки для своей школы"
+        )
+
+    # Проверяем что заявка еще не обработана
+    if request.status != RequestStatus.pending:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Заявка уже обработана (статус: {request.status.value})"
+        )
+
+    # Проверяем что пользователь с таким email еще не создан
+    existing_user = db.query(User).filter(User.email == request.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь с таким email уже существует"
+        )
+
+    try:
+        # Создаем пользователя
+        new_user = User(
+            full_name=request.full_name,
+            email=request.email,
+            hashed_password=request.password,  # Уже захеширован
+            role=RoleEnum[request.role],  # Конвертируем строку в enum
+            school_id=request.school_id,
+            is_verified=True
+        )
+
+        db.add(new_user)
+
+        # Обновляем статус заявки
+        request.status = RequestStatus.approved
+
+        db.commit()
+        db.refresh(new_user)
+
+        logger.info(f"Successfully approved request {request_id}, created user {new_user.id}")
+
+        return {
+            "success": True,
+            "message": "Заявка одобрена, пользователь создан",
+            "data": {
+                "user_id": new_user.id,
+                "full_name": new_user.full_name,
+                "email": new_user.email,
+                "role": new_user.role.value
+            }
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error approving request {request_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при одобрении заявки"
+        )
+
+
+@router.post("/registration-requests/{request_id}/reject", response_model=dict)
+def reject_registration_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Отклонить заявку на регистрацию
+
+    Returns:
+        {
+            "success": true,
+            "message": "Заявка отклонена",
+            "data": {
+                "request_id": 15,
+                "full_name": "Иван Петров",
+                "email": "ivan@example.com"
+            }
+        }
+    """
+    ensure_school_admin(current_user)
+
+    if current_user.school_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Администратор не привязан к школе"
+        )
+
+    logger.info(f"Admin {current_user.id} rejecting registration request {request_id}")
+
+    # Проверяем что заявка существует
+    request = db.query(RegistrationRequest).filter(RegistrationRequest.id == request_id).first()
+    if not request:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Заявка не найдена"
+        )
+
+    # Проверяем что заявка для нашей школы
+    if request.school_id != current_user.school_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Вы можете отклонять только заявки для своей школы"
+        )
+
+    # Проверяем что заявка еще не обработана
+    if request.status != RequestStatus.pending:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Заявка уже обработана (статус: {request.status.value})"
+        )
+
+    try:
+        # Обновляем статус заявки
+        request.status = RequestStatus.rejected
+        db.commit()
+
+        logger.info(f"Successfully rejected request {request_id}")
+
+        return {
+            "success": True,
+            "message": "Заявка отклонена",
+            "data": {
+                "request_id": request.id,
+                "full_name": request.full_name,
+                "email": request.email
+            }
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error rejecting request {request_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при отклонении заявки"
+        )
+
+
+@router.post("/create-teacher", status_code=status.HTTP_201_CREATED, response_model=dict)
+def create_teacher_directly(
+    full_name: str,
+    email: str,
+    password: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Создать учителя напрямую (без заявки)
+
+    Используется когда у школы нет кода или админ хочет добавить учителя вручную
+
+    Request:
+        {
+            "full_name": "Иван Петров",
+            "email": "ivan@example.com",
+            "password": "secure_password"
+        }
+
+    Returns:
+        {
+            "success": true,
+            "message": "Учитель успешно создан",
+            "data": {
+                "user_id": 42,
+                "full_name": "Иван Петров",
+                "email": "ivan@example.com",
+                "role": "teacher",
+                "school_id": 1,
+                "school_name": "Школа №125"
+            }
+        }
+    """
+    ensure_school_admin(current_user)
+
+    if current_user.school_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Администратор не привязан к школе"
+        )
+
+    logger.info(f"Admin {current_user.id} creating teacher directly: {email}")
+
+    # Проверяем что email уникален
+    existing_user = db.query(User).filter(User.email == email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь с таким email уже существует"
+        )
+
+    try:
+        # Хешируем пароль
+        hashed_password = get_password_hash(password)
+
+        # Создаем учителя
+        new_teacher = User(
+            full_name=full_name,
+            email=email,
+            hashed_password=hashed_password,
+            role=RoleEnum.teacher,
+            school_id=current_user.school_id,
+            is_verified=True
+        )
+
+        db.add(new_teacher)
+        db.commit()
+        db.refresh(new_teacher)
+
+        logger.info(f"Successfully created teacher {new_teacher.id} for school {current_user.school_id}")
+
+        return {
+            "success": True,
+            "message": "Учитель успешно создан",
+            "data": {
+                "user_id": new_teacher.id,
+                "full_name": new_teacher.full_name,
+                "email": new_teacher.email,
+                "role": new_teacher.role.value,
+                "school_id": new_teacher.school_id,
+                "school_name": current_user.school.name if current_user.school else None
+            }
+        }
+
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ошибка при создании учителя (возможно email уже существует)"
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creating teacher: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при создании учителя"
+        )
