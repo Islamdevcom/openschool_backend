@@ -361,6 +361,103 @@ def debug_all_teachers(
         )
 
 
+@router.post("/teacher/{teacher_id}/attach-to-school", response_model=dict)
+def attach_teacher_to_school(
+    teacher_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Привязать учителя к школе администратора
+
+    Используется для индивидуальных учителей (school_id = NULL)
+    чтобы они появились в списке учителей школы
+
+    Returns:
+        {
+            "success": true,
+            "message": "Учитель успешно привязан к школе",
+            "data": {
+                "teacher_id": 42,
+                "teacher_name": "Иван Петров",
+                "school_id": 1,
+                "school_name": "Школа №125"
+            }
+        }
+    """
+    ensure_school_admin(current_user)
+
+    if current_user.school_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Администратор не привязан к школе"
+        )
+
+    logger.info(f"Admin {current_user.id} attaching teacher {teacher_id} to school {current_user.school_id}")
+
+    # Проверяем что учитель существует
+    teacher = db.query(User).filter(User.id == teacher_id).first()
+    if not teacher:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Учитель не найден"
+        )
+
+    # Проверяем что это учитель
+    if teacher.role != RoleEnum.teacher:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь не является учителем"
+        )
+
+    # Проверяем что учитель еще не привязан к другой школе
+    if teacher.school_id is not None and teacher.school_id != current_user.school_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Учитель уже привязан к другой школе (ID: {teacher.school_id})"
+        )
+
+    # Если уже привязан к этой школе
+    if teacher.school_id == current_user.school_id:
+        return {
+            "success": True,
+            "message": "Учитель уже привязан к вашей школе",
+            "data": {
+                "teacher_id": teacher.id,
+                "teacher_name": teacher.full_name,
+                "school_id": current_user.school_id,
+                "school_name": current_user.school.name if current_user.school else None
+            }
+        }
+
+    try:
+        # Привязываем к школе
+        teacher.school_id = current_user.school_id
+        db.commit()
+        db.refresh(teacher)
+
+        logger.info(f"Successfully attached teacher {teacher_id} to school {current_user.school_id}")
+
+        return {
+            "success": True,
+            "message": "Учитель успешно привязан к школе",
+            "data": {
+                "teacher_id": teacher.id,
+                "teacher_name": teacher.full_name,
+                "school_id": current_user.school_id,
+                "school_name": current_user.school.name if current_user.school else None
+            }
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error attaching teacher to school: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка при привязке учителя к школе"
+        )
+
+
 # ========== Teacher Discipline Assignment ==========
 
 @router.post("/teacher/{teacher_id}/assign-discipline", response_model=dict)
