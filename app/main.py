@@ -44,6 +44,9 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
         # Получаем origin из запроса
         origin = request.headers.get("origin")
 
+        # DEBUG: Логируем все CORS запросы
+        logger.info(f"🌐 CORS Request: {request.method} {request.url.path} from origin: {origin}")
+
         # Обрабатываем preflight OPTIONS запросы
         if request.method == "OPTIONS":
             response = JSONResponse(content={}, status_code=200)
@@ -57,13 +60,20 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
                     content={"detail": f"Internal server error: {str(e)}"}
                 )
 
-        # ВСЕГДА добавляем CORS заголовки
-        if origin and (origin in self.allowed_origins or "*" in self.allowed_origins):
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-            response.headers["Access-Control-Allow-Headers"] = "*"
-            response.headers["Access-Control-Expose-Headers"] = "*"
+        # ВСЕГДА добавляем CORS заголовки для разрешенных origins
+        if origin:
+            # Проверяем разрешен ли origin
+            is_allowed = origin in self.allowed_origins or "*" in self.allowed_origins
+
+            if is_allowed:
+                response.headers["Access-Control-Allow-Origin"] = origin
+                response.headers["Access-Control-Allow-Credentials"] = "true"
+                response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+                response.headers["Access-Control-Allow-Headers"] = "*"
+                response.headers["Access-Control-Expose-Headers"] = "*"
+                logger.info(f"✅ CORS headers added for origin: {origin}")
+            else:
+                logger.warning(f"❌ CORS blocked for origin: {origin}. Allowed origins: {self.allowed_origins}")
 
         return response
 
@@ -83,8 +93,26 @@ def create_app() -> FastAPI:
 
     logger.info(f"🔒 CORS настройки: разрешенные origins = {allowed_origins}")
 
-    # Используем custom CORS middleware для гарантированной работы CORS
-    app.add_middleware(CustomCORSMiddleware, allowed_origins=allowed_origins)
+    # Используем стандартный FastAPI CORS middleware (самый надежный)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],  # Разрешаем все методы
+        allow_headers=["*"],  # Разрешаем все заголовки
+        expose_headers=["*"],
+    )
+
+    # Health check эндпоинт для проверки CORS
+    @app.get("/health")
+    def health_check():
+        """Health check endpoint для проверки работы сервера и CORS"""
+        return {
+            "status": "ok",
+            "message": "OpenSchool Backend is running",
+            "cors_enabled": True,
+            "allowed_origins": allowed_origins
+        }
 
     # Подключаем роутеры
     app.include_router(init.router)  # Теги указаны в роутере
