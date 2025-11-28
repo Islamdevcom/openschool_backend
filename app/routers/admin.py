@@ -265,6 +265,12 @@ def get_school_teachers(
     logger.info(f"Admin {current_user.id} requesting all teachers for school {current_user.school_id}")
 
     try:
+        # DEBUG: Проверяем всех учителей в системе
+        all_teachers = db.query(User).filter(User.role == RoleEnum.teacher).all()
+        logger.info(f"DEBUG: Total teachers in system: {len(all_teachers)}")
+        for t in all_teachers:
+            logger.info(f"DEBUG: Teacher ID={t.id}, name={t.full_name}, school_id={t.school_id}")
+
         # Получаем всех учителей школы
         teachers = (
             db.query(User)
@@ -273,6 +279,8 @@ def get_school_teachers(
             .order_by(User.full_name)
             .all()
         )
+
+        logger.info(f"DEBUG: Teachers with school_id={current_user.school_id}: {len(teachers)}")
 
         # Формируем response с количеством дисциплин
         data = []
@@ -300,6 +308,56 @@ def get_school_teachers(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ошибка при получении списка учителей"
+        )
+
+
+@router.get("/debug/all-teachers", response_model=dict)
+def debug_all_teachers(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    DEBUG эндпоинт: Получить всех учителей в системе (для отладки)
+
+    Показывает всех учителей независимо от школы
+    """
+    ensure_school_admin(current_user)
+
+    logger.info(f"Admin {current_user.id} requesting DEBUG all teachers")
+
+    try:
+        # Получаем ВСЕХ учителей в системе
+        all_teachers = db.query(User).filter(User.role == RoleEnum.teacher).all()
+
+        data = []
+        for teacher in all_teachers:
+            disciplines = get_teacher_disciplines(db, teacher.id, active_only=True)
+
+            teacher_data = {
+                "id": teacher.id,
+                "name": teacher.full_name,
+                "email": teacher.email,
+                "school_id": teacher.school_id,
+                "school_name": teacher.school.name if teacher.school else "НЕ ПРИВЯЗАН К ШКОЛЕ",
+                "disciplines_count": len(disciplines),
+                "is_in_my_school": teacher.school_id == current_user.school_id
+            }
+            data.append(teacher_data)
+
+        return {
+            "success": True,
+            "data": {
+                "total_teachers": len(data),
+                "admin_school_id": current_user.school_id,
+                "teachers": data
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ошибка в debug эндпоинте"
         )
 
 
